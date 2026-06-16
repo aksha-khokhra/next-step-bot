@@ -4,7 +4,6 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
 from bot.db import async_session
-from bot.handlers.next import send_next_step
 from bot.keyboards import main_menu_keyboard, task_actions_keyboard
 from bot.messages import format_next_step
 from bot.services import tasks as task_svc
@@ -25,7 +24,7 @@ async def cmd_add(message: Message, state: FSMContext) -> None:
 
 
 @router.message(Command("clear"))
-async def cmd_clear(message: Message) -> None:
+async def cmd_clear(message: Message, state: FSMContext) -> None:
     args = (message.text or "").split(maxsplit=1)
     if len(args) < 2 or args[1].strip().lower() != "confirm":
         async with async_session() as session:
@@ -41,6 +40,10 @@ async def cmd_clear(message: Message) -> None:
     async with async_session() as session:
         removed = await task_svc.clear_all_tasks(session, message.from_user.id)
         await session.commit()
+
+    from bot.handlers.next import _clear_skipped_ids
+
+    await _clear_skipped_ids(state)
 
     await message.answer(
         f"Removed {removed} tasks. You're starting fresh.\n\nUse /add when you're ready.",
@@ -69,7 +72,6 @@ async def _send_goal_list(message: Message, user_id: int) -> None:
     for i, g in enumerate(goals, 1):
         lines.append(f"{i}. {g.title}")
     lines.append("\n/breakdown — split a task into steps")
-    lines.append("/next — one small step to do now")
     await message.answer(
         "\n".join(lines), parse_mode="Markdown", reply_markup=main_menu_keyboard()
     )
@@ -97,8 +99,7 @@ async def _add_task(message: Message, title: str, state: FSMContext) -> None:
 
     await message.answer(
         f'Added: "{title}"\n\n'
-        "When you're ready, use /breakdown to split it into steps, "
-        "or /next to work on something.",
+        "When you're ready, use /breakdown to split it into steps.",
         reply_markup=main_menu_keyboard(),
     )
 
@@ -134,7 +135,7 @@ async def _save_manual_step(message: Message, state: FSMContext) -> None:
         await session.commit()
 
     if child is None:
-        await message.answer("Something went wrong. Try /next.")
+        await message.answer("Something went wrong. Try /breakdown.")
         return
 
     await message.answer(
@@ -149,9 +150,3 @@ async def menu_list(callback: CallbackQuery) -> None:
     if callback.message:
         await _send_goal_list(callback.message, callback.from_user.id)
 
-
-@router.callback_query(F.data == "menu:next")
-async def menu_next(callback: CallbackQuery) -> None:
-    await callback.answer()
-    if callback.message:
-        await send_next_step(callback.message, callback.from_user.id)

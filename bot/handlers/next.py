@@ -13,15 +13,75 @@ from bot.services.recommender import get_next_task
 
 router = Router()
 
-
-@router.message(Command("next"))
-async def cmd_next(message: Message) -> None:
-    await send_next_step(message, message.from_user.id)
+SKIPPED_IDS_KEY = "skipped_task_ids"
 
 
-async def send_next_step(message: Message, user_id: int) -> None:
+async def _get_skipped_ids(state: FSMContext) -> set[int]:
+    data = await state.get_data()
+    return set(data.get(SKIPPED_IDS_KEY, []))
+
+
+async def _add_skipped_id(state: FSMContext, task_id: int) -> None:
+    skipped = await _get_skipped_ids(state)
+    skipped.add(task_id)
+    await state.update_data(**{SKIPPED_IDS_KEY: list(skipped)})
+
+
+async def _clear_skipped_ids(state: FSMContext) -> None:
+    await state.update_data(**{SKIPPED_IDS_KEY: []})
+
+
+@router.message(Command("done"))
+async def cmd_done(message: Message, state: FSMContext) -> None:
+    user_id = message.from_user.id
+    skipped = await _get_skipped_ids(state)
     async with async_session() as session:
-        task = await get_next_task(session, user_id)
+        task = await get_next_task(session, user_id, exclude_ids=skipped)
+        if task is None:
+            await session.commit()
+            await message.answer("Nothing to mark done right now.")
+            return
+        await task_svc.complete_task(session, task)
+        skipped.discard(task.id)
+        await state.update_data(**{SKIPPED_IDS_KEY: list(skipped)})
+        await session.commit()
+
+    await message.answer("Nice — marked done.")
+    await send_next_step(message, user_id, state)
+
+
+@router.message(Command("skip"))
+async def cmd_skip(message: Message, state: FSMContext) -> None:
+    user_id = message.from_user.id
+    skipped = await _get_skipped_ids(state)
+    async with async_session() as session:
+        current = await get_next_task(session, user_id, exclude_ids=skipped)
+        await session.commit()
+
+    if current is None:
+        await message.answer(
+            "Nothing to skip. Use /breakdown to start on a task.",
+            reply_markup=main_menu_keyboard(),
+        )
+        return
+
+    await _add_skipped_id(state, current.id)
+    await message.answer("Skipped — here's another step:")
+    await send_next_step(message, user_id, state)
+
+
+async def send_next_step(
+    message: Message,
+    user_id: int,
+    state: FSMContext,
+    *,
+    max_minutes: int | None = None,
+) -> None:
+    skipped = await _get_skipped_ids(state)
+    async with async_session() as session:
+        task = await get_next_task(
+            session, user_id, max_minutes=max_minutes, exclude_ids=skipped
+        )
         if task is None:
             pending = await task_svc.list_tasks_for_breakdown(session, user_id)
         await session.commit()
@@ -32,6 +92,18 @@ async def send_next_step(message: Message, user_id: int) -> None:
             reply_markup=task_actions_keyboard(task.id),
         )
         return
+
+    if skipped:
+        async with async_session() as session:
+            has_more = await get_next_task(session, user_id, exclude_ids=set())
+            await session.commit()
+        if has_more is not None:
+            await message.answer(
+                "No more steps to show — you skipped the rest.\n"
+                "Use /done when you finish a step, or /breakdown for another task.",
+                reply_markup=main_menu_keyboard(),
+            )
+            return
 
     if pending:
         await message.answer(
@@ -45,7 +117,9 @@ async def send_next_step(message: Message, user_id: int) -> None:
 
 
 @router.callback_query(TaskActionCallback.filter(F.action == "done"))
-async def on_done(callback: CallbackQuery, callback_data: TaskActionCallback) -> None:
+async def on_done(
+    callback: CallbackQuery, callback_data: TaskActionCallback, state: FSMContext
+) -> None:
     user_id = callback.from_user.id
     async with async_session() as session:
         task = await task_svc.get_task(session, callback_data.task_id, user_id)
@@ -53,27 +127,29 @@ async def on_done(callback: CallbackQuery, callback_data: TaskActionCallback) ->
             await callback.answer("Task not found.", show_alert=True)
             return
         await task_svc.complete_task(session, task)
+        skipped = await _get_skipped_ids(state)
+        skipped.discard(task.id)
+        await state.update_data(**{SKIPPED_IDS_KEY: list(skipped)})
         await session.commit()
 
     await callback.answer("Nice — marked done.")
     if callback.message:
-        await send_next_step(callback.message, user_id)
+        await send_next_step(callback.message, user_id, state)
 
 
-@router.callback_query(TaskActionCallback.filter(F.action == "snooze"))
-async def on_snooze(callback: CallbackQuery, callback_data: TaskActionCallback) -> None:
+@router.callback_query(TaskActionCallback.filter(F.action == "skip"))
+async def on_skip(
+    callback: CallbackQuery, callback_data: TaskActionCallback, state: FSMContext
+) -> None:
+    await callback.answer()
     user_id = callback.from_user.id
-    async with async_session() as session:
-        task = await task_svc.get_task(session, callback_data.task_id, user_id)
-        if task is None:
-            await callback.answer("Task not found.", show_alert=True)
-            return
-        await task_svc.snooze_task(session, task, hours=1)
-        await session.commit()
+    skipped = await _get_skipped_ids(state)
+    skipped.add(callback_data.task_id)
+    await state.update_data(**{SKIPPED_IDS_KEY: list(skipped)})
 
-    await callback.answer("Snoozed for 1 hour.")
     if callback.message:
-        await send_next_step(callback.message, user_id)
+        await callback.message.answer("Skipped — here's another step:")
+        await send_next_step(callback.message, user_id, state)
 
 
 @router.callback_query(TaskActionCallback.filter(F.action == "too_big"))

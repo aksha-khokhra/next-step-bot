@@ -28,9 +28,9 @@ def task_actions_keyboard(task_id: int) -> InlineKeyboardMarkup:
             ],
             [
                 InlineKeyboardButton(
-                    text="Snooze 1h",
+                    text="Skip",
                     callback_data=TaskActionCallback(
-                        action="snooze", task_id=task_id
+                        action="skip", task_id=task_id
                     ).pack(),
                 ),
             ],
@@ -42,10 +42,7 @@ def main_menu_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
-                InlineKeyboardButton(text="What's next?", callback_data="menu:next"),
                 InlineKeyboardButton(text="My tasks", callback_data="menu:list"),
-            ],
-            [
                 InlineKeyboardButton(
                     text="Break down a task", callback_data="menu:breakdown"
                 ),

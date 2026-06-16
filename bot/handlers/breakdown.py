@@ -74,7 +74,7 @@ async def on_pick_task(
                 await status.delete()
             if callback.message:
                 await callback.message.answer(
-                    "That task already has steps. Use /next to continue, "
+                    "That task already has steps. Use /done or /skip to work through them, "
                     "or tap *Too big* on a step to split it further.",
                     parse_mode="Markdown",
                     reply_markup=main_menu_keyboard(),

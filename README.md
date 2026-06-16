@@ -1,11 +1,11 @@
 # Next Step Bot
 
-Telegram bot that breaks overwhelming tasks into small steps and recommends **one** action at a time. Uses [Ollama](https://ollama.com) locally (free) for AI breakdown.
+Telegram bot that helps with overwhelm by recommending **one** small action at a time. Add tasks freely, break them down with AI when you need help (via local [Ollama](https://ollama.com)), and work through steps with simple buttons.
 
 ## Prerequisites
 
 - Python 3.11+
-- [Ollama](https://ollama.com) running with `phi3:mini`:
+- [Ollama](https://ollama.com) with a small model:
   ```powershell
   ollama pull phi3:mini
   ```
@@ -14,43 +14,73 @@ Telegram bot that breaks overwhelming tasks into small steps and recommends **on
 ## Setup
 
 ```powershell
-cd "c:\Users\khokh\OneDrive\Documents\My Projects\next-step-bot"
+cd path\to\next-step-bot
 python -m venv .venv
 .\.venv\Scripts\pip install -r requirements.txt
 copy .env.example .env
 ```
 
-No need to run `Activate.ps1` (often blocked on Windows).
-
-Edit `.env` and set `BOT_TOKEN=...` from BotFather.
+Edit `.env` and set `BOT_TOKEN` from BotFather. Never commit `.env`.
 
 ## Run
 
-1. Ensure Ollama is running (open the Ollama app or it starts in the tray).
+1. Open **Ollama** (tray icon visible).
 2. Start the bot:
 
 ```powershell
 .\.venv\Scripts\python.exe -m bot
 ```
 
-Or double-click `run.bat`, or run `.\run.bat` in the terminal.
+Or double-click `run.bat`.
 
-3. Open your bot in Telegram on your phone or desktop and send `/start`.
+3. Message your bot in Telegram (`/start`).
 
 ## Commands
 
 | Command | Description |
 |---------|-------------|
-| `/start` | Welcome |
-| `/add <task>` | Add goal and AI-break into steps |
-| `/next` | One recommended next step |
-| `/list` | Up to 5 pending goals |
+| `/start` | Welcome and menu |
+| `/add <task>` | Add a task (no breakdown yet) |
+| `/breakdown` | Pick a task and split into AI steps |
+| `/skip` | Skip current step, get another one |
+| `/done` | Mark current step done |
+| `/list` | Your pending tasks (up to 5) |
+| `/clear confirm` | Delete all tasks |
 | `/help` | Usage reminder |
 
-You can also send plain text (without `/`) to add a task.
+Plain text (without `/`) also adds a task.
+
+**Buttons:** Done, Too big (smaller steps), Skip
+
+## Environment variables
+
+See `.env.example`:
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `BOT_TOKEN` | Yes | Telegram bot token |
+| `DATABASE_URL` | No | SQLite path (default is fine) |
+| `OLLAMA_BASE_URL` | No | Default `http://127.0.0.1:11434` |
+| `OLLAMA_MODEL` | No | Default `phi3:mini` |
+| `OLLAMA_TIMEOUT_SECONDS` | No | AI request timeout |
+| `MAX_BREAKDOWNS_PER_DAY` | No | Per-user daily AI cap |
+
+## Tests
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest tests/ -v
+```
+
+## Deploy later (optional)
+
+MVP uses **long-polling** on your PC. For 24/7 use from your phone without your PC:
+
+- Deploy the bot to a VPS (Railway, Fly.io, etc.)
+- Run Ollama on the same server, or switch to a cloud LLM API
+- Switch from polling to a **webhook** in `bot/__main__.py`
 
 ## Notes
 
-- The bot must run on a PC with Ollama while you use it from Telegram on your phone.
-- Keep your PC awake and the bot process running for replies.
-- `.env` and `data/` are gitignored — do not commit your token.
+- Bot + Ollama must run on the same machine (your PC for MVP).
+- Keep the terminal open while using the bot.
+- `.env` and `data/` are gitignored.

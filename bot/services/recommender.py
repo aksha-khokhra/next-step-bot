@@ -19,18 +19,31 @@ def _depth(task: Task, by_id: dict[int, Task]) -> int:
     return depth
 
 
-def pick_next(leaves: list[Task], all_tasks: list[Task]) -> Task | None:
+def pick_next(
+    leaves: list[Task],
+    all_tasks: list[Task],
+    *,
+    max_minutes: int | None = None,
+    exclude_ids: set[int] | None = None,
+) -> Task | None:
     if not leaves:
         return None
 
+    excluded = exclude_ids or set()
     now = datetime.now(UTC)
     eligible: list[Task] = []
     for task in leaves:
+        if task.id in excluded:
+            continue
         if task.status == TaskStatus.SNOOZED:
             if task.snoozed_until and task.snoozed_until > now:
                 continue
             task.status = TaskStatus.PENDING
             task.snoozed_until = None
+        if max_minutes is not None:
+            minutes = task.estimated_minutes if task.estimated_minutes is not None else 999
+            if minutes > max_minutes:
+                continue
         eligible.append(task)
 
     if not eligible:
@@ -47,13 +60,21 @@ def pick_next(leaves: list[Task], all_tasks: list[Task]) -> Task | None:
     return min(eligible, key=sort_key)
 
 
-async def get_next_task(session: AsyncSession, user_id: int) -> Task | None:
+async def get_next_task(
+    session: AsyncSession,
+    user_id: int,
+    *,
+    max_minutes: int | None = None,
+    exclude_ids: set[int] | None = None,
+) -> Task | None:
     leaves = await task_svc.get_pending_leaves(session, user_id)
     result = await session.execute(select(Task).where(Task.user_id == user_id))
     all_tasks = list(result.scalars().all())
 
     subtask_leaves = [t for t in leaves if t.parent_id is not None]
     if subtask_leaves:
-        return pick_next(subtask_leaves, all_tasks)
+        return pick_next(
+            subtask_leaves, all_tasks, max_minutes=max_minutes, exclude_ids=exclude_ids
+        )
 
     return None
