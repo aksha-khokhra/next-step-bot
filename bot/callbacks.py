@@ -8,3 +8,7 @@ class TaskActionCallback(CallbackData, prefix="task"):
 
 class PickTaskCallback(CallbackData, prefix="pick"):
     task_id: int
+
+
+class DoneTaskCallback(CallbackData, prefix="done"):
+    task_id: int

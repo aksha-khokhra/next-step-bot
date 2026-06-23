@@ -50,18 +50,14 @@ def test_pick_next_respects_max_minutes():
     assert result.id == 1
 
 
-def test_pick_next_skips_snoozed_until_passed():
-    from datetime import timedelta
+def test_pick_next_returns_none_when_all_excluded():
+    a = _task(1, minutes=5)
+    b = _task(2, minutes=10)
+    all_tasks = [a, b]
 
-    now = datetime.now(UTC)
-    snoozed = _task(1, status=TaskStatus.SNOOZED)
-    snoozed.snoozed_until = now - timedelta(minutes=1)
-    all_tasks = [snoozed]
+    result = pick_next([a, b], all_tasks, exclude_ids={1, 2})
 
-    result = pick_next([snoozed], all_tasks)
-
-    assert result is not None
-    assert result.status == TaskStatus.PENDING
+    assert result is None
 
 
 def test_pick_next_excludes_skipped_ids():
@@ -73,6 +69,17 @@ def test_pick_next_excludes_skipped_ids():
 
     assert result is not None
     assert result.id == 2
+
+
+def test_root_id_finds_top_level_goal():
+    from bot.services.tasks import root_id
+
+    root = _task(1)
+    child = _task(2, parent_id=1)
+    grandchild = _task(3, parent_id=2)
+    by_id = {t.id: t for t in [root, child, grandchild]}
+
+    assert root_id(grandchild, by_id) == 1
 
 
 def test_pick_next_returns_none_when_empty():

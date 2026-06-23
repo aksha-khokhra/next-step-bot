@@ -1,10 +1,20 @@
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 
-from sqlalchemy import and_, delete, func, or_, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from bot.models import Task, TaskStatus, User
+
+
+def root_id(task: Task, by_id: dict[int, Task]) -> int:
+    current = task
+    while current.parent_id is not None:
+        parent = by_id.get(current.parent_id)
+        if parent is None:
+            break
+        current = parent
+    return current.id
 
 
 async def ensure_user(session: AsyncSession, telegram_id: int) -> User:
@@ -47,11 +57,24 @@ async def get_task(
     return result.scalar_one_or_none()
 
 
+async def complete_goal(session: AsyncSession, task: Task) -> None:
+    """Mark a root task and all its subtasks as done."""
+    now = datetime.now(UTC)
+    stack = [task]
+    while stack:
+        current = stack.pop()
+        current.status = TaskStatus.DONE
+        current.completed_at = now
+        result = await session.execute(
+            select(Task).where(Task.parent_id == current.id)
+        )
+        stack.extend(result.scalars().all())
+
+
 async def complete_task(session: AsyncSession, task: Task) -> None:
     now = datetime.now(UTC)
     task.status = TaskStatus.DONE
     task.completed_at = now
-    task.snoozed_until = None
 
     if task.parent_id is not None:
         parent = await get_task(session, task.parent_id, task.user_id)
@@ -62,11 +85,6 @@ async def complete_task(session: AsyncSession, task: Task) -> None:
             children = list(siblings.scalars().all())
             if children and all(c.status == TaskStatus.DONE for c in children):
                 await complete_task(session, parent)
-
-
-async def snooze_task(session: AsyncSession, task: Task, hours: int = 1) -> None:
-    task.status = TaskStatus.SNOOZED
-    task.snoozed_until = datetime.now(UTC) + timedelta(hours=hours)
 
 
 async def list_goals(session: AsyncSession, user_id: int, limit: int = 5) -> list[Task]:
@@ -101,41 +119,49 @@ async def list_tasks_for_breakdown(
     return [t for t in result.scalars().all() if not t.children]
 
 
-def task_has_subtasks(task: Task) -> bool:
-    return bool(task.children)
+async def list_in_progress_goals(
+    session: AsyncSession, user_id: int, limit: int = 10
+) -> list[Task]:
+    """Root tasks that have been started but still have pending steps."""
+    leaves = await get_pending_leaves(session, user_id)
+    if not leaves:
+        return []
+
+    result = await session.execute(select(Task).where(Task.user_id == user_id))
+    by_id = {t.id: t for t in result.scalars().all()}
+
+    roots: list[Task] = []
+    seen: set[int] = set()
+    for leaf in leaves:
+        if leaf.parent_id is None:
+            continue
+        rid = root_id(leaf, by_id)
+        if rid in seen:
+            continue
+        root = by_id.get(rid)
+        if (
+            root is not None
+            and root.parent_id is None
+            and root.status == TaskStatus.PENDING
+        ):
+            seen.add(rid)
+            roots.append(root)
+            if len(roots) >= limit:
+                break
+    return roots
 
 
 async def get_pending_leaves(session: AsyncSession, user_id: int) -> list[Task]:
-    now = datetime.now(UTC)
     result = await session.execute(
         select(Task)
-        .where(
-            Task.user_id == user_id,
-            or_(
-                Task.status == TaskStatus.PENDING,
-                and_(
-                    Task.status == TaskStatus.SNOOZED,
-                    Task.snoozed_until.is_not(None),
-                    Task.snoozed_until <= now,
-                ),
-            ),
-        )
+        .where(Task.user_id == user_id, Task.status == TaskStatus.PENDING)
         .options(selectinload(Task.children))
     )
     all_pending = list(result.scalars().all())
 
     leaves: list[Task] = []
     for task in all_pending:
-        active_children = [
-            c
-            for c in task.children
-            if c.status == TaskStatus.PENDING
-            or (
-                c.status == TaskStatus.SNOOZED
-                and c.snoozed_until
-                and c.snoozed_until <= now
-            )
-        ]
+        active_children = [c for c in task.children if c.status == TaskStatus.PENDING]
         if not active_children:
             leaves.append(task)
     return leaves

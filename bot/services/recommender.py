@@ -3,20 +3,9 @@ from datetime import UTC, datetime
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from bot.models import Task, TaskStatus
+from bot.models import Task
 from bot.services import tasks as task_svc
-
-
-def _depth(task: Task, by_id: dict[int, Task]) -> int:
-    depth = 0
-    current = task
-    while current.parent_id is not None:
-        depth += 1
-        parent = by_id.get(current.parent_id)
-        if parent is None:
-            break
-        current = parent
-    return depth
+from bot.services.tasks import root_id
 
 
 def pick_next(
@@ -26,33 +15,31 @@ def pick_next(
     max_minutes: int | None = None,
     exclude_ids: set[int] | None = None,
 ) -> Task | None:
-    if not leaves:
-        return None
-
     excluded = exclude_ids or set()
-    now = datetime.now(UTC)
-    eligible: list[Task] = []
-    for task in leaves:
-        if task.id in excluded:
-            continue
-        if task.status == TaskStatus.SNOOZED:
-            if task.snoozed_until and task.snoozed_until > now:
-                continue
-            task.status = TaskStatus.PENDING
-            task.snoozed_until = None
-        if max_minutes is not None:
-            minutes = task.estimated_minutes if task.estimated_minutes is not None else 999
-            if minutes > max_minutes:
-                continue
-        eligible.append(task)
-
+    eligible = [
+        t
+        for t in leaves
+        if t.id not in excluded
+        and (
+            max_minutes is None
+            or (t.estimated_minutes if t.estimated_minutes is not None else 999)
+            <= max_minutes
+        )
+    ]
     if not eligible:
         return None
 
     by_id = {t.id: t for t in all_tasks}
 
     def sort_key(t: Task) -> tuple:
-        depth = _depth(t, by_id)
+        depth = 0
+        current = t
+        while current.parent_id is not None:
+            depth += 1
+            parent = by_id.get(current.parent_id)
+            if parent is None:
+                break
+            current = parent
         minutes = t.estimated_minutes if t.estimated_minutes is not None else 999
         created = t.created_at or datetime.min.replace(tzinfo=UTC)
         return (depth, minutes, -t.priority, created)
@@ -66,15 +53,19 @@ async def get_next_task(
     *,
     max_minutes: int | None = None,
     exclude_ids: set[int] | None = None,
+    goal_id: int | None = None,
 ) -> Task | None:
     leaves = await task_svc.get_pending_leaves(session, user_id)
     result = await session.execute(select(Task).where(Task.user_id == user_id))
     all_tasks = list(result.scalars().all())
+    by_id = {t.id: t for t in all_tasks}
 
     subtask_leaves = [t for t in leaves if t.parent_id is not None]
-    if subtask_leaves:
-        return pick_next(
-            subtask_leaves, all_tasks, max_minutes=max_minutes, exclude_ids=exclude_ids
-        )
+    if goal_id is not None:
+        subtask_leaves = [t for t in subtask_leaves if root_id(t, by_id) == goal_id]
 
-    return None
+    if not subtask_leaves:
+        return None
+    return pick_next(
+        subtask_leaves, all_tasks, max_minutes=max_minutes, exclude_ids=exclude_ids
+    )

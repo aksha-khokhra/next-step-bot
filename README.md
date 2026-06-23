@@ -41,16 +41,16 @@ Or double-click `run.bat`.
 |---------|-------------|
 | `/start` | Welcome and menu |
 | `/add <task>` | Add a task (no breakdown yet) |
-| `/breakdown` | Pick a task and split into AI steps |
-| `/skip` | Skip current step, get another one |
-| `/done` | Mark current step done |
-| `/list` | Your pending tasks (up to 5) |
-| `/clear confirm` | Delete all tasks |
+| `/list` | Your tasks — tap one to break down or continue |
+| `/breakdown` | Same as picking a task from `/list` |
+| `/done` | Pick which main task you finished |
+| `/clear` | Show delete confirmation message |
+| `/confirmclear` | Delete all tasks |
 | `/help` | Usage reminder |
 
 Plain text (without `/`) also adds a task.
 
-**Buttons:** Done, Too big (smaller steps), Skip
+**Buttons:** My tasks, Add task (when empty). While working: Next, Too big, Skip, My tasks
 
 ## Environment variables
 

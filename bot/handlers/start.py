@@ -1,8 +1,8 @@
-from aiogram import Router
-from aiogram.filters import Command, CommandStart
-from aiogram.types import Message
+from aiogram import Router  # pyright: ignore[reportMissingImports]
+from aiogram.filters import Command, CommandStart  # pyright: ignore[reportMissingImports]
+from aiogram.types import Message  # pyright: ignore[reportMissingImports]
 
-from bot.keyboards import main_menu_keyboard
+from bot.keyboards import my_tasks_keyboard
 
 router = Router()
 
@@ -10,17 +10,15 @@ router = Router()
 @router.message(CommandStart())
 async def cmd_start(message: Message) -> None:
     await message.answer(
-        "Hi! I'm your *next step* coach.\n\n"
+        "Hi! I'm *Thinklet!* Your personal assistant.\n\n"
         "Add tasks when they come to mind. When you want help, "
         "pick one and I'll break it into small steps — *one* at a time.\n\n"
         "• /add <task> — add a task\n"
-        "• /breakdown — split a task into steps and start\n"
-        "• /skip — move to another step\n"
-        "• /list — your tasks\n"
+        "• /list — your tasks (tap one to break down)\n"
         "• /clear — remove all tasks\n"
         "• /help — reminder",
         parse_mode="Markdown",
-        reply_markup=main_menu_keyboard(),
+        reply_markup=my_tasks_keyboard(),
     )
 
 
@@ -28,12 +26,12 @@ async def cmd_start(message: Message) -> None:
 async def cmd_help(message: Message) -> None:
     await message.answer(
         "Commands:\n"
-        "/add Write essay — add a task (no breakdown yet)\n"
-        "/breakdown — pick a task and split into steps\n"
-        "/skip — skip current step, get another one\n"
-        "/done — mark current step done\n"
-        "/list — your tasks\n"
-        "/clear confirm — delete all your tasks\n\n"
-        "Buttons: Done, Too big (smaller steps), Skip",
-        reply_markup=main_menu_keyboard(),
+        "/add Write essay — add a task\n"
+        "/list — your tasks (tap one to break down or continue)\n"
+        "/done — pick which main task you finished\n"
+        "/clear — ask for delete confirmation\n"
+        "/confirmclear — delete all your tasks\n"
+        "/breakdown — same as picking a task from /list\n\n"
+        "While working on steps: Next, Too big, Skip, My tasks",
+        reply_markup=my_tasks_keyboard(),
     )

@@ -35,5 +35,5 @@ def format_empty() -> str:
     return (
         "Nothing to do right now.\n\n"
         "/add — add a task\n"
-        "/breakdown — split a task into steps"
+        "/list — see your tasks"
     )

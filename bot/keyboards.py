@@ -1,67 +1,69 @@
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup  # pyright: ignore[reportMissingImports]
 
-from bot.callbacks import PickTaskCallback, TaskActionCallback
+from bot.callbacks import DoneTaskCallback, PickTaskCallback, TaskActionCallback
 from bot.models import Task
 
 
 def _truncate(text: str, max_len: int = 48) -> str:
     text = text.strip()
-    if len(text) <= max_len:
-        return text
-    return text[: max_len - 1] + "…"
+    return text if len(text) <= max_len else text[: max_len - 1] + "…"
+
+
+def _btn(text: str, callback_data: str) -> InlineKeyboardButton:
+    return InlineKeyboardButton(text=_truncate(text), callback_data=callback_data)
 
 
 def task_actions_keyboard(task_id: int) -> InlineKeyboardMarkup:
+    pack = lambda action: TaskActionCallback(action=action, task_id=task_id).pack()
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
-                InlineKeyboardButton(
-                    text="Done",
-                    callback_data=TaskActionCallback(action="done", task_id=task_id).pack(),
-                ),
-                InlineKeyboardButton(
-                    text="Too big",
-                    callback_data=TaskActionCallback(
-                        action="too_big", task_id=task_id
-                    ).pack(),
-                ),
+                _btn("Next", pack("next")),
+                _btn("Too big", pack("too_big")),
+                _btn("Skip", pack("skip")),
             ],
-            [
-                InlineKeyboardButton(
-                    text="Skip",
-                    callback_data=TaskActionCallback(
-                        action="skip", task_id=task_id
-                    ).pack(),
-                ),
-            ],
+            [_btn("My tasks", "menu:list")],
         ]
     )
 
 
-def main_menu_keyboard() -> InlineKeyboardMarkup:
+def my_tasks_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(text="My tasks", callback_data="menu:list"),
-                InlineKeyboardButton(
-                    text="Break down a task", callback_data="menu:breakdown"
-                ),
-            ],
-        ]
+        inline_keyboard=[[_btn("My tasks", "menu:list")]]
     )
 
 
-def pick_task_keyboard(tasks: list[Task]) -> InlineKeyboardMarkup:
+def add_task_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[[_btn("Add task", "menu:add")]]
+    )
+
+
+def _task_picker(
+    tasks: list[Task],
+    callback_cls: type[DoneTaskCallback] | type[PickTaskCallback],
+    *,
+    in_progress_ids: set[int] | None = None,
+) -> InlineKeyboardMarkup:
+    active = in_progress_ids or set()
     rows = [
         [
-            InlineKeyboardButton(
-                text=_truncate(task.title),
-                callback_data=PickTaskCallback(task_id=task.id).pack(),
+            _btn(
+                f"▶ {t.title}" if t.id in active else t.title,
+                callback_cls(task_id=t.id).pack(),
             )
         ]
-        for task in tasks
+        for t in tasks
     ]
-    rows.append(
-        [InlineKeyboardButton(text="Cancel", callback_data="menu:cancel")]
-    )
+    rows.append([_btn("Cancel", "menu:cancel")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def pick_done_keyboard(tasks: list[Task]) -> InlineKeyboardMarkup:
+    return _task_picker(tasks, DoneTaskCallback)
+
+
+def pick_task_keyboard(
+    tasks: list[Task], *, in_progress_ids: set[int] | None = None
+) -> InlineKeyboardMarkup:
+    return _task_picker(tasks, PickTaskCallback, in_progress_ids=in_progress_ids)

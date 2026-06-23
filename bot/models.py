@@ -12,7 +12,6 @@ class Base(DeclarativeBase):
 class TaskStatus(StrEnum):
     PENDING = "pending"
     DONE = "done"
-    SNOOZED = "snoozed"
 
 
 class User(Base):
@@ -43,9 +42,6 @@ class Task(Base):
     status: Mapped[str] = mapped_column(String(20), default=TaskStatus.PENDING)
     estimated_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
     priority: Mapped[int] = mapped_column(Integer, default=0)
-    snoozed_until: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
